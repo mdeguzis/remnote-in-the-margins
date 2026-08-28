@@ -1,0 +1,23 @@
+{
+  "manifestVersion": 1,
+  "id": "remnote-in-the-margins",
+  "name": "In The Margins - Comments for Remnote",
+  "author": "mdeguzis",
+  "description": "Word style comments for RemNote. Select any text and comment on it, or comment on the document as a whole. Comments live in a right sidebar panel, and clicking one jumps back to the text.",
+  "repoUrl": "https://github.com/mdeguzis/remnote-in-the-margins",
+  "projectUrl": "https://github.com/mdeguzis/remnote-in-the-margins",
+  "supportUrl": "https://github.com/mdeguzis/remnote-in-the-margins/issues",
+  "version": {
+    "major": 0,
+    "minor": 2,
+    "patch": 0
+  },
+  "enableOnMobile": true,
+  "requestNative": true,
+  "requiredScopes": [
+    {
+      "type": "All",
+      "level": "ReadCreateModify"
+    }
+  ]
+}

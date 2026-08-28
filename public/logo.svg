@@ -1,0 +1,30 @@
+<!--
+  A sheet of ruled paper with a scribble out in the margin, which is the whole
+  plugin in one picture: the note lives beside the text, not in it.
+
+  Deliberately sparse. An earlier version had five rules and a caret and turned
+  into a grey smudge at 32px, which is the size a marketplace list actually
+  renders. Four heavy rules and two scribbles survive the shrink. The margin
+  rule is the only red, so the eye goes to the margin first.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="In The Margins">
+  <rect width="128" height="128" rx="20" fill="#fdfcf8"/>
+  <rect x="1.5" y="1.5" width="125" height="125" rx="18.5" fill="none" stroke="#c9cedb" stroke-width="3"/>
+
+  <!-- the text: four rules, stopping short of the edge the way real paper does -->
+  <g stroke="#7fb4d6" stroke-width="7" stroke-linecap="round">
+    <path d="M56 40h56"/>
+    <path d="M56 58h56"/>
+    <path d="M56 76h56"/>
+    <path d="M56 94h38"/>
+  </g>
+
+  <!-- the margin rule -->
+  <path d="M42 8v112" stroke="#e0575c" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- the note, out in the margin where the plugin puts it -->
+  <g fill="none" stroke="#2f3542" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 55c5-7 8 6 14-1"/>
+    <path d="M14 73c5-7 8 6 14-1"/>
+  </g>
+</svg>

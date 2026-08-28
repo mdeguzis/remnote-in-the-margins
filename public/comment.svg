@@ -1,0 +1,22 @@
+<!--
+  The icon RemNote shows for this plugin in menus and widget tabs.
+
+  RemNote loads this through an <img>, and an SVG in an <img> is an isolated
+  document: it cannot see the page's colours, so `currentColor` resolves to the
+  initial value, BLACK, and the icon disappears against a dark tab bar. That is
+  why this file cannot simply use currentColor the way src/ui/Icon.tsx does.
+
+  An SVG document does honour its own media queries, so the colour is chosen
+  here instead. This tracks the BROWSER's colour scheme rather than RemNote's
+  theme, which is the closest a standalone file can get.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <style>
+    path { stroke: #1f2430; }
+    @media (prefers-color-scheme: dark) { path { stroke: #f0f3f8; } }
+  </style>
+  <path d="M20.5 14.2a2.3 2.3 0 0 1-2.3 2.3H8.6L4.2 19.8V5.5a2.3 2.3 0 0 1 2.3-2.3h11.7a2.3 2.3 0 0 1 2.3 2.3z"/>
+  <path d="M8.5 8.2h8"/>
+  <path d="M8.5 11.6h5"/>
+</svg>
