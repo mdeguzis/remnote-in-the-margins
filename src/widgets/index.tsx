@@ -18,7 +18,7 @@ import {
   SETTING_PAINT_HIGHLIGHT,
   SETTING_PULSE_ON_JUMP,
   SETTING_SHOW_COUNT,
-  SETTING_VERBOSE,
+  SETTING_DEBUG,
 } from '../lib/settings.ts';
 import { readComments, readIndex } from '../lib/storage.ts';
 import { publishDiagnostics } from '../lib/diagnostics.ts';
@@ -83,9 +83,10 @@ async function onActivate(plugin: ReactRNPlugin) {
       id: SETTING_PULSE_ON_JUMP,
       title: 'Flash the highlight when jumping to a comment',
       description:
-        'Briefly change the highlight colour so the text is easy to pick out on arrival. This is a ' +
-        'real edit to the Rem, so it adds an entry to the undo history each time. The text stays ' +
-        'selected either way, so turning this off still shows you where you landed.',
+        'Blink the highlight twice on arrival so the text is easy to pick out, then drop the ' +
+        'selection so the formatting toolbar does not sit over the paragraph. This is a real edit ' +
+        'to the Rem, so it adds entries to the undo history. Turn it off and the text is left ' +
+        'selected instead, which shows where you landed but brings the toolbar with it.',
       defaultValue: DEFAULTS.pulseOnJump,
     }),
   );
@@ -98,25 +99,30 @@ async function onActivate(plugin: ReactRNPlugin) {
     }),
   );
 
-  await safely('the verbose logging setting', () =>
+  await safely('the debug console setting', () =>
     plugin.settings.registerBooleanSetting({
-      id: SETTING_VERBOSE,
-      title: 'Verbose logging',
+      id: SETTING_DEBUG,
+      title: 'Enable debug console messages',
       description:
-        'Write a line to the developer console for every anchor resolution, storage write and jump. ' +
-        'Turn this on before reporting a problem.',
-      defaultValue: DEFAULTS.verbose,
+        'Write extra detail to the developer console: what the editor reports for a selection, how ' +
+        'each anchor resolves, every storage write and each step of a jump. Off in normal use. ' +
+        'Turn it on before reporting a problem, reproduce it, then copy the console.',
+      defaultValue: DEFAULTS.debug,
     }),
   );
 
   // The index plugin is not React and cannot use a tracker hook, so the only
   // way it learns about a settings change is the event.
-  const syncVerbosity = async () => {
+  // The index plugin has its own module instance, so this covers ONLY its own
+  // logging. Each widget applies the same setting for itself via
+  // useDebugLogging; see the note there.
+  const syncDebug = async () => {
     const settings = await readSettings(plugin);
-    setDebugLogging(settings.verbose);
+    setDebugLogging(settings.debug);
   };
-  await safely('the verbosity listener', async () => {
-    await syncVerbosity();
+  await safely('the debug logging listener', async () => {
+    await syncDebug();
+    plugin.event.addListener(AppEvents.SettingChanged, SETTING_DEBUG, () => void syncDebug());
   });
 
   // The pane header button, level with the star.
@@ -307,7 +313,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     await plugin.app.toast(`In The Margins: ${failed.length} part(s) failed to load: ${failed.join(', ')}`);
   }
 
-  void syncVerbosity();
+  void syncDebug();
 }
 
 async function onDeactivate(plugin: ReactRNPlugin) {

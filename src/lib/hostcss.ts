@@ -76,7 +76,7 @@ iframe[src^="${safe}"]${id ? `,\niframe[src*="pluginId=${id}"]` : ''} {
 `;
 
   await plugin.app.registerCSS(CSS_ID, css);
-  log('INFO', 'host CSS applied to our widget frames', {
+  log('DEBUG', 'host CSS applied to our widget frames', {
     rootURL: root,
     cssId: CSS_ID,
     source: 'applyHostCSS',

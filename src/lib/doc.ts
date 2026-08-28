@@ -1,8 +1,15 @@
 import type { RNPlugin, RichTextInterface } from '@remnote/plugin-sdk';
-import { SelectionType } from '@remnote/plugin-sdk';
 import { resolveAnchor } from './anchor.ts';
 import { describeError, log } from './log.ts';
-import { PULSE_COLOR, PULSE_FALLBACK, PULSE_MS, type HighlightColor, type Settings } from './settings.ts';
+import {
+  PULSE_COLOR,
+  PULSE_FALLBACK,
+  PULSE_MS,
+  PULSE_TIMES,
+  type HighlightColor,
+  type Settings,
+} from './settings.ts';
+import { SELECTION_TEXT } from './types.ts';
 import type { Anchor, Comment, RemId } from './types.ts';
 
 /**
@@ -22,18 +29,32 @@ import type { Anchor, Comment, RemId } from './types.ts';
  * every poll: several hundred identical entries, which is worse than no logging
  * because it buries everything else.
  */
+/**
+ * Does the host's selection sit on this Rem?
+ *
+ * Both shapes, because a Rem selection carries `remIds` (an array) and a text
+ * selection carries `remId`. Reading only one of them is how an earlier version
+ * of this check silently never matched.
+ */
+function landedOn(selection: unknown, remId: RemId): boolean {
+  const one = (selection as { remId?: string } | undefined)?.remId;
+  if (typeof one === 'string') return one === remId;
+  const many = (selection as { remIds?: string[] } | undefined)?.remIds;
+  return Array.isArray(many) ? many.includes(remId) : false;
+}
+
 const lastSelectionLog = new Map<string, string>();
 
 function logSelectionOnce(message: string, context: Record<string, unknown>): void {
   const signature = JSON.stringify(context);
   if (lastSelectionLog.get(message) === signature) return;
   lastSelectionLog.set(message, signature);
-  // INFO, not DEBUG, and deliberately so while the selection path is unproven.
-  // Gating it behind the verbose setting meant the one question that matters -
-  // does the host tell a widget about the selection at all - produced silence
-  // in the console rather than an answer. Deduplicated, so a 400ms poll costs
-  // one line per actual change.
-  log('INFO', message, context);
+  // DEBUG, behind the "Enable debug console messages" setting. It was
+  // temporarily INFO while the selection path was unproven, because the setting
+  // did not reach widgets and gating it produced silence instead of an answer.
+  // That is fixed, so this is back to being opt in. Deduplicated, so a 400ms
+  // poll costs one line per actual change rather than several per second.
+  log('DEBUG', message, context);
 }
 
 /** The plain text of a Rem, as RemNote counts characters. */
@@ -94,12 +115,17 @@ export async function captureSelection(plugin: RNPlugin): Promise<Anchor | undef
     present: Boolean(selection),
     type: selection?.type ?? 'none',
     remId: (selection as { remId?: string } | undefined)?.remId ?? null,
+    // remIds, not just remId. A Rem selection carries the array and no remId, so
+    // logging only remId printed "null" for every Rem selection and hid the one
+    // field that says which line the host thinks is selected.
+    remIds: (selection as { remIds?: string[] } | undefined)?.remIds ?? null,
+    keys: selection ? Object.keys(selection) : null,
     range: (selection as { range?: { start: number; end: number } } | undefined)?.range ?? null,
-    expectedType: SelectionType.Text,
+    expectedType: SELECTION_TEXT,
     source: 'editor.getSelection',
   });
 
-  if (!selection || selection.type !== SelectionType.Text) {
+  if (!selection || selection.type !== SELECTION_TEXT) {
     return undefined;
   }
 
@@ -277,13 +303,23 @@ export async function jumpToComment(
 
   // If the reader has navigated somewhere else, put them back on the document
   // first, or selecting a Rem that is not on screen does nothing visible.
+  // Reopen ONLY when we positively know we are on a different document.
+  //
+  // `openDocId !== comment.docId` also fires when openDocId is undefined, and
+  // focusedDocumentId does return undefined once focus has moved into a Rem -
+  // which is exactly the state the previous jump left behind. So the second
+  // click on a comment reopened the document, and reopening resets the scroll
+  // to the top. That is the "works once, then jumps to the top forever" bug.
+  //
+  // Not knowing where we are is not evidence of being in the wrong place. Same
+  // fail-open rule as the focus check below.
   const openDocId = await focusedDocumentId(plugin);
-  if (openDocId !== comment.docId) {
+  if (openDocId && openDocId !== comment.docId) {
     const doc = await plugin.rem.findOne(comment.docId);
     if (doc) await plugin.window.openRem(doc);
     log('DEBUG', 'jump: reopened the document first', {
       commentId: comment.id,
-      wasOn: openDocId ?? 'nothing',
+      wasOn: openDocId,
       openedDocId: comment.docId,
       source: 'window.openRem',
     });
@@ -300,7 +336,7 @@ export async function jumpToComment(
   const step = async (what: string, fn: () => Promise<unknown>): Promise<boolean> => {
     try {
       await fn();
-      log('INFO', `jump: ${what} ok`, { commentId: comment.id, remId: anchor.remId, source: 'jumpToComment' });
+      log('DEBUG', `jump: ${what} ok`, { commentId: comment.id, remId: anchor.remId, source: 'jumpToComment' });
       return true;
     } catch (err) {
       log('WARN', `jump: ${what} failed`, {
@@ -313,50 +349,112 @@ export async function jumpToComment(
     }
   };
 
+  // Where the editor was before we touched anything. A jump that misbehaves is
+  // almost always explained by where focus already was, and that is invisible
+  // once the jump has run.
+  const before = await plugin.editor.getSelection().catch(() => undefined);
+  log('DEBUG', 'jump: editor state before', {
+    commentId: comment.id,
+    targetRemId: anchor.remId,
+    beforeType: (before as { type?: string } | undefined)?.type ?? 'none',
+    beforeRemId: (before as { remId?: string } | undefined)?.remId ?? null,
+    beforeRemIds: (before as { remIds?: string[] } | undefined)?.remIds ?? null,
+    beforeRange: (before as { range?: unknown } | undefined)?.range ?? null,
+    source: 'jumpToComment',
+  });
+
+  // No pre-emptive collapse here. It was tried, and mutation testing showed
+  // removing it changed nothing: the verify-and-retry below already covers the
+  // stale-Rem case, so the pre-collapse was a second mechanism for a problem
+  // that already had one. Two paths to the same fix is how they drift.
+  //
   // Selecting the line is what scrolls it into view.
-  const selectedRem = await step('selectRem', () => plugin.editor.selectRem([anchor.remId]));
+  let selectedRem = await step('selectRem', () => plugin.editor.selectRem([anchor.remId]));
 
-  // Narrowing to the exact characters is what makes it obvious WHICH words, but
-  // ONLY once the host agrees we are in the right line.
-  //
-  // selectText applies to the FOCUSED editor, not to whatever selectRem just
-  // picked. Called unconditionally it happily selects characters 152 to 192 of
-  // whichever line the caret happened to be in, which is how clicking a comment
-  // ended up highlighting an unrelated paragraph. Confirmed from a log where the
-  // target was one Rem and the focus was demonstrably another.
-  //
-  // So the host is asked where it thinks the selection is, and the range is
-  // applied only if that matches. Selecting the wrong words is worse than
-  // selecting the whole line: the line is merely imprecise, the wrong words are
-  // a lie about where the comment belongs.
-  let selectedText = false;
-  const landedOn = await plugin.editor.getSelection().catch(() => undefined);
-  const landedRemId = (landedOn as { remId?: string } | undefined)?.remId;
+  // And where it ended up, so a wrong landing is visible rather than inferred.
+  let after = await plugin.editor.getSelection().catch(() => undefined);
 
-  if (landedRemId === anchor.remId) {
-    selectedText = await step('selectText', () =>
-      plugin.editor.selectText({ start: at.start!, end: at.end! }),
+  // One retry, because a no-op selectRem reports success and the only way to
+  // know it did nothing is to look. Collapsing first is what makes the retry
+  // different from the attempt that just failed.
+  if (!landedOn(after, anchor.remId)) {
+    await step('collapseSelection (retry)', () => plugin.editor.collapseSelection('start'));
+    selectedRem = await step('selectRem (retry)', () =>
+      plugin.editor.selectRem([anchor.remId]),
     );
-  } else {
-    log('INFO', 'jump: kept the whole line, focus is elsewhere', {
-      commentId: comment.id,
-      wantedRemId: anchor.remId,
-      focusedRemId: landedRemId ?? 'none',
-      source: 'jumpToComment',
-    });
+    after = await plugin.editor.getSelection().catch(() => undefined);
   }
 
-  // Last resort: open the Rem in context. It changes what is on screen more
-  // than a selection does, so it is only used when nothing else landed.
-  if (!selectedRem && !selectedText) {
+  log('DEBUG', 'jump: editor state after selectRem', {
+    commentId: comment.id,
+    targetRemId: anchor.remId,
+    afterType: (after as { type?: string } | undefined)?.type ?? 'none',
+    afterRemId: (after as { remId?: string } | undefined)?.remId ?? null,
+    afterRemIds: (after as { remIds?: string[] } | undefined)?.remIds ?? null,
+    landedOnTarget: landedOn(after, anchor.remId),
+    source: 'jumpToComment',
+  });
+
+  // There is deliberately NO editor.selectText call here, and that is the fix
+  // rather than an omission.
+  //
+  // Evidence, from a log of several jumps in one session: the jump that SKIPPED
+  // selectText landed correctly, and every jump that RAN it broke - scrolling to
+  // the top of the document and raising the formatting toolbar over an unrelated
+  // paragraph. It only ran from the second jump onward, because the first found
+  // no selection to confirm against, which is exactly the "works once, then
+  // never again" report.
+  //
+  // selectRem scrolls the line into view, which is the part that matters, and
+  // the highlight blink below marks the precise words. selectText was only ever
+  // adding precision to the selection highlight, and it cost correctness.
+  //
+  // Four rounds went into guarding, delaying and collapsing around this call
+  // before reading the log the other way up and noticing that the working case
+  // was the one that never made it.
+  const selectedText = false;
+
+  // Last resort, gated on whether we LANDED rather than on whether the calls
+  // succeeded.
+  //
+  // That distinction is the fix. selectRem resolves ok even when it does
+  // nothing, so a fallback conditioned on failure never ran. The case it exists
+  // for is a fresh page where no editor is focused at all (beforeType 'none'):
+  // there, selectRem has no context to work from and reports success twice
+  // while the view does not move. Landing is the only honest test.
+  if (!landedOn(after, anchor.remId)) {
+    log('INFO', 'jump: selectRem did not land, opening the Rem in context', {
+      commentId: comment.id,
+      remId: anchor.remId,
+      beforeType: (before as { type?: string } | undefined)?.type ?? 'none',
+      source: 'jumpToComment',
+    });
     await step('openRemInContext', () => rem.openRemInContext());
   }
 
   if (settings.pulseOnJump && settings.paintHighlight) {
+    // Collapse FIRST, then blink. The order is the whole fix.
+    //
+    // Selecting text is what scrolls it into view, but it also raises RemNote's
+    // formatting toolbar over the paragraph, which is noise when the user asked
+    // to LOOK at something rather than edit it.
+    //
+    // Collapsing has to happen while the selection is still OURS. The pulse
+    // rewrites the Rem's text eight times, and those writes disturb whatever
+    // selection exists; collapsing afterwards was therefore collapsing something
+    // else, and 'start' of something else is the top of the document. That is
+    // the "works once, then jumps to the top" report, and it survived the
+    // earlier openRem fix because it has a different cause: every step still
+    // logged ok, because every step DID succeed.
+    //
+    // Collapsed to the start of the range, so the caret stays on the words we
+    // just scrolled to.
+    // No selection to collapse: nothing selects text any more, so RemNote's
+    // formatting toolbar never appears and there is nothing to dismiss.
     await pulse(plugin, { ...anchor, start: at.start!, end: at.end! }, settings.highlightColor);
   }
 
-  log('INFO', 'jump: done', {
+  log('DEBUG', 'jump: done', {
     commentId: comment.id,
     remId: anchor.remId,
     start: at.start,
@@ -379,12 +477,17 @@ export async function jumpToComment(
  */
 async function pulse(plugin: RNPlugin, anchor: Anchor, resting: HighlightColor): Promise<void> {
   const flash: HighlightColor = resting === PULSE_COLOR ? PULSE_FALLBACK : PULSE_COLOR;
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
   try {
-    await clearHighlight(plugin, anchor, resting);
-    await paintHighlight(plugin, anchor, flash);
-    await new Promise((r) => setTimeout(r, PULSE_MS));
-    await clearHighlight(plugin, anchor, flash);
-    await paintHighlight(plugin, anchor, resting);
+    for (let i = 0; i < PULSE_TIMES; i++) {
+      await clearHighlight(plugin, anchor, resting);
+      await paintHighlight(plugin, anchor, flash);
+      await wait(PULSE_MS);
+      await clearHighlight(plugin, anchor, flash);
+      await paintHighlight(plugin, anchor, resting);
+      // No trailing pause after the last blink: it would just delay the caller.
+      if (i < PULSE_TIMES - 1) await wait(PULSE_MS);
+    }
   } catch (err) {
     log('ERROR', 'pulse failed, the highlight colour may be left wrong', {
       remId: anchor.remId,

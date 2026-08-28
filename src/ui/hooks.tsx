@@ -4,6 +4,7 @@ import { AppEvents, useAPIEventListener, usePlugin, useTrackerPlugin } from '@re
 import { resolveAnchor, sortComments } from '../lib/anchor.ts';
 import { captureSelection, documentIdForPane, focusedDocumentId, remOrder } from '../lib/doc.ts';
 import { describeError, log } from '../lib/log.ts';
+import { setDebugLogging } from '../lib/log.ts';
 import { DEFAULTS, readSettings, type Settings } from '../lib/settings.ts';
 import { COMMENTS_CHANGED_EVENT_KEY, docKey, readComments } from '../lib/storage.ts';
 import type { Anchor, AnchorStatus, Comment, RemId } from '../lib/types.ts';
@@ -31,6 +32,22 @@ export function rootClass(): string {
 export function useSettings(): Settings {
   const settings = useTrackerPlugin(async (plugin) => await readSettings(plugin), []);
   return settings ?? DEFAULTS;
+}
+
+/**
+ * Apply the debug console setting to THIS widget.
+ *
+ * Must be called from every widget, and that is not busywork. The flag lives in
+ * a module variable, and every widget runs in its own iframe with its own copy
+ * of every module, so the index plugin setting it has no effect anywhere else.
+ * The setting appeared to work, because the index plugin's own lines obeyed it,
+ * while the widgets - where nearly all the interesting logging happens - ignored
+ * it completely. The symptom is asking a user to turn on logging and getting
+ * silence back.
+ */
+export function useDebugLogging(): void {
+  const { debug } = useSettings();
+  React.useEffect(() => setDebugLogging(debug), [debug]);
 }
 
 /** A counter to force a re-read, and the function that bumps it. */

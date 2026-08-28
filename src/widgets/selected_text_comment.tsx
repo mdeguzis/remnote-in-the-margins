@@ -7,7 +7,7 @@ import { captureSelection, focusedDocumentId } from '../lib/doc.ts';
 import { describeError, log } from '../lib/log.ts';
 import type { Anchor } from '../lib/types.ts';
 import { Composer } from '../ui/Composer.tsx';
-import { rootClass } from '../ui/hooks.tsx';
+import { rootClass, useDebugLogging } from '../ui/hooks.tsx';
 import { Styles } from '../ui/Styles.tsx';
 
 /**
@@ -23,6 +23,7 @@ import { Styles } from '../ui/Styles.tsx';
  */
 function SelectedTextComment(): JSX.Element {
   const plugin = usePlugin();
+  useDebugLogging();
   const [busy, setBusy] = React.useState(false);
   const [done, setDone] = React.useState(false);
 

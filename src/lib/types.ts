@@ -49,3 +49,19 @@ export interface AnchorResolution {
   start?: number;
   end?: number;
 }
+
+/**
+ * The selection kinds RemNote reports, as plain strings.
+ *
+ * Mirrors the SDK's `SelectionType` enum. Declared locally because importing
+ * that enum is a RUNTIME import of `@remnote/plugin-sdk`, which drags the whole
+ * SDK into any module that touches it, and `node --test` cannot load it at all.
+ * Keeping these local is what lets the jump logic be tested against a fake host
+ * instead of only in the app.
+ *
+ * The values must match the SDK. There are two of them and they have not
+ * changed; a mismatch shows up immediately as a selection that is never
+ * recognised.
+ */
+export const SELECTION_TEXT = 'Text';
+export const SELECTION_REM = 'Rem';

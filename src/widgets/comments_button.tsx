@@ -9,6 +9,7 @@ import { MarginsIcon } from '../ui/Icon.tsx';
 import { Styles } from '../ui/Styles.tsx';
 import {
   rootClass,
+  useDebugLogging,
   useCommentCount,
   useDocIdForPane,
   useLastTextSelection,
@@ -30,6 +31,7 @@ import {
  */
 function CommentsButton(): JSX.Element {
   const plugin = usePlugin();
+  useDebugLogging();
   const settings = useSettings();
   const ctx = useRunAsync(
     async () => await plugin.widget.getWidgetContext<WidgetLocation.PaneHeader>(),

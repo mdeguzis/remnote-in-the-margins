@@ -137,7 +137,7 @@ works; the theme falls back to the `Panel theme` setting below.
 | Flash the highlight when jumping | On | A real edit to the Rem, so it adds an undo entry each time. The text stays selected either way |
 | Show the comment count on the toolbar button | On | The number next to the speech bubble |
 | Panel theme | Auto | Auto follows RemNote. Set it by hand if the panel opens with the wrong one |
-| Verbose logging | Off | A console line for every anchor resolution, storage write and jump. Turn it on before reporting a problem |
+| Enable debug console messages | Off | Extra detail in the developer console: what the editor reports for a selection, how each anchor resolves, every storage write and each step of a jump. Turn it on before reporting a problem |
 
 ## Commands
 

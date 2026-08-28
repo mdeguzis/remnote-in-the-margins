@@ -16,6 +16,7 @@ import {
   rootClass,
   useAnchorHealth,
   useComments,
+  useDebugLogging,
   useFocusedDocId,
   useLastTextSelection,
   useSettings,
@@ -30,6 +31,7 @@ import {
  */
 export function Panel(): JSX.Element {
   const plugin = usePlugin();
+  useDebugLogging();
   const settings = useSettings();
   const docId = useFocusedDocId();
   const state = useComments(docId);
@@ -109,8 +111,33 @@ export function Panel(): JSX.Element {
   const jump = (id: string) =>
     void run('go to that text', async () => {
       const comment = comments.find((c) => c.id === id);
-      if (!comment) return;
+      if (!comment) {
+        log('WARN', 'clicked a comment that is no longer in the list', {
+          commentId: id,
+          listSize: comments.length,
+          source: 'Panel.jump',
+        });
+        return;
+      }
+
+      // Logged at the point of the CLICK, before anything is attempted, so the
+      // console shows what the user asked for as well as what happened. Without
+      // it the first line of a jump is already an outcome, and there is no way
+      // to tell a click that did the wrong thing from a click that never
+      // registered.
+      log('INFO', 'clicked a comment', {
+        commentId: comment.id,
+        anchored: Boolean(comment.anchor),
+        remId: comment.anchor?.remId ?? null,
+        start: comment.anchor?.start ?? null,
+        end: comment.anchor?.end ?? null,
+        quotePreview: comment.anchor?.quote.slice(0, 40) ?? null,
+        anchorHealth: health.get(comment.id) ?? 'unchecked',
+        docId,
+        source: 'Panel.jump',
+      });
       const outcome = await jumpToComment(plugin, comment, settings);
+      log('INFO', 'jump finished', { commentId: comment.id, outcome, source: 'Panel.jump' });
       if (outcome === 'lost') {
         await plugin.app.toast('That text has been edited away, so there is nowhere to jump to.');
       } else if (outcome === 'missing-rem') {
@@ -220,19 +247,21 @@ export function Panel(): JSX.Element {
             onEdit={(body) =>
               void run('save that edit', async () => {
                 if (!docId) return;
+                log('INFO', 'editing a comment', { commentId: c.id, docId, source: 'Panel' });
                 await updateComment(plugin, docId, c.id, body);
               })
             }
             onDelete={() =>
               void run('delete that comment', async () => {
                 if (!docId) return;
+                log('INFO', 'deleting a comment', { commentId: c.id, docId, source: 'Panel' });
                 await deleteComment(plugin, docId, c.id);
               })
             }
           />
         ))}
 
-        {settings.verbose ? <DiagnosticsPanel /> : null}
+        {settings.debug ? <DiagnosticsPanel /> : null}
 
         <div className="itm-tail" />
       </div>
