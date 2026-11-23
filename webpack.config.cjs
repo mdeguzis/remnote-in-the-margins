@@ -38,7 +38,10 @@ const SANDBOX_SUFFIX = '-sandbox';
 // place that decides the port: the failure mode is a sibling RemNote plugin's
 // dev server being killed by the freeing step while webpack binds another port.
 const DEV_PORT = Number(process.env.PORT || 8080);
-const DEV_HOST = process.env.HOST || 'localhost';
+// 127.0.0.1, not 'localhost'. Where localhost resolves to ::1 first, webpack
+// binds IPv6 only, and RemNote's fetch of localhost:8080 then goes to the IPv4
+// address and fails with a bare "Network Error".
+const DEV_HOST = process.env.HOST || '127.0.0.1';
 
 const config = {
   mode: isProd ? 'production' : 'development',
@@ -137,6 +140,17 @@ if (isProd) {
     // cross-origin, so both of these are required or the manifest fetch fails.
     headers: {
       'Access-Control-Allow-Origin': '*',
+      // Chrome treats an https page fetching localhost as a private network
+      // request and preflights it. Without this answer it drops the request and
+      // RemNote reports a bare "Network Error", with CORS looking fine.
+      'Access-Control-Allow-Private-Network': 'true',
+      // RemNote's manifest fetch sets a user-agent header, which makes it a
+      // preflighted request. Firefox refuses it unless the preflight names the
+      // header ("header 'user-agent' is not allowed according to header
+      // 'Access-Control-Allow-Headers'"). Named explicitly as well as `*`,
+      // because older browsers do not honour the wildcard.
+      'Access-Control-Allow-Headers': 'user-agent, content-type, *',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
     },
     allowedHosts: 'all',
     // Belt and braces: CopyPlugin already emits public/ into the compilation,
